@@ -2,6 +2,8 @@ import argparse
 import json
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from inky.auto import auto
+from PIL import Image
 from ssl import PROTOCOL_TLS_SERVER, SSLContext
 from utils import check_path, check_certificate
 from os import walk
@@ -63,6 +65,13 @@ class BadgeServer(BaseHTTPRequestHandler):
         content_length = int(self.headers["Content-Length"])
         with open(path, "wb") as output:
             output.write(self.rfile.read(content_length))
+
+        inky = auto(ask_user=True, verbose=True)
+        image = Image.open(path)
+
+        resized = image.resize(inky.resolution)
+        inky.set_image(resized, saturation=0.5)
+        inky.show()
 
         body = f"Saved {basename}"
         self.send_response(201, "Created")

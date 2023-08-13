@@ -10,12 +10,15 @@ env/
 venv/
 ENV/
 
-# SSL credentials
-*.key
-*.pem
+# MAC
+*.DS_Store
 
 # PyCharm
 .idea/
+
+# SSL credentials
+*.key
+*.pem
 
 # User uploads
 uploads/
