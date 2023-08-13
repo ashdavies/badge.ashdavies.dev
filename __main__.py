@@ -2,18 +2,22 @@ import argparse
 import json
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from utils import check_socket, check_path
+from ssl import PROTOCOL_TLS_SERVER, SSLContext
+from utils import check_path, check_certificate
 from os import walk
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--host", default="0.0.0.0")
 parser.add_argument("--port", default=8080)
+parser.add_argument("--cert-file", default="cert.pem")
+parser.add_argument("--private-key", default="private.key")
 parser.add_argument("--uploads", default="uploads")
 
 args = parser.parse_args()
 
-#check_socket(args.host, int(args.port))
+#  check_socket(args.host, int(args.port))
+check_certificate(args.cert_file, args.private_key)
 check_path(args.uploads)
 
 
@@ -69,13 +73,17 @@ class BadgeServer(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    webServer = HTTPServer((args.host, int(args.port)), BadgeServer)
-    print(f"Server started http://{args.host}:{args.port}")
+    ssl_context = SSLContext(PROTOCOL_TLS_SERVER)
+    ssl_context.load_cert_chain(args.cert_file, args.private_key)
+
+    http_server = HTTPServer((args.host, int(args.port)), BadgeServer)
+    print(f"Server started https://{args.host}:{args.port}")
 
     try:
-        webServer.serve_forever()
+        http_server.socket = ssl_context.wrap_socket(http_server.socket, server_side=True)
+        http_server.serve_forever()
     except KeyboardInterrupt:
         pass
 
-    webServer.server_close()
+    http_server.server_close()
     print("Server stopped.")
