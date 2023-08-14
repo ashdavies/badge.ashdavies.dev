@@ -3,10 +3,11 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from inky.auto import auto
-from PIL import Image
+from PIL import Image, ImageOps
 from ssl import PROTOCOL_TLS_SERVER, SSLContext
 from utils import check_path, check_certificate
 from os import walk
+from urllib import parse
 
 parser = argparse.ArgumentParser()
 
@@ -25,6 +26,7 @@ check_path(args.uploads)
 
 class BadgeServer(BaseHTTPRequestHandler):
 
+    # curl -k -X GET https://raspberrypi.local:8080
     def do_GET(self):  # pylint: disable=invalid-name
         if self.path == "/":
             body = self._list_contents(args.uploads)
@@ -48,29 +50,40 @@ class BadgeServer(BaseHTTPRequestHandler):
         self.send_response(405, "Method Not Allowed")
         self.end_headers()
 
+    # curl -k -X PUT --upload-file {} https://raspberrypi.local:8080
     def do_PUT(self):  # pylint: disable=invalid-name
-        basename = os.path.basename(self.path)
+        params = parse.parse_qs(parse.urlparse(self.path).query)
+        image = next(iter(params.get("image", None) or []), None)
+
+        basename = image or os.path.basename(self.path)
         path = f"{args.uploads}/{basename}"
-        print(f"Resolved output path {path}")
 
-        if os.path.exists(path):
-            body = f"{basename} already exists"
-            self.send_response(409, "Conflict")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Content-Type", "text/plain")
+        content_length = int(self.headers["Content-Length"] or 0)
+        if content_length > 0:
+            if os.path.exists(path):
+                body = f"{basename} already exists"
+                self.send_response(409, "Conflict")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(body.encode("utf-8"))
+                return
+
+            with open(path, "wb") as output:
+                output.write(self.rfile.read(content_length))
+
+        elif not os.path.exists(path):
+            self.send_response(404, "Not Found")
             self.end_headers()
-            self.wfile.write(body.encode("utf-8"))
             return
-
-        content_length = int(self.headers["Content-Length"])
-        with open(path, "wb") as output:
-            output.write(self.rfile.read(content_length))
 
         inky = auto(ask_user=True, verbose=True)
         image = Image.open(path)
 
-        resized = image.resize(inky.resolution)
-        inky.set_image(resized, saturation=0.5)
+        resized = ImageOps.fit(image, inky.resolution)
+        saturation = params.get("saturation", 0.5)
+
+        inky.set_image(resized, saturation=saturation)
         inky.show()
 
         body = f"Saved {basename}"
