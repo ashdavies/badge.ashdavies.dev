@@ -77,13 +77,16 @@ class BadgeServer(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-        inky = auto(ask_user=True, verbose=True)
         image = Image.open(path)
 
-        resized = ImageOps.fit(image, inky.resolution)
-        saturation = params.get("saturation", 0.5)
+        rotation = int(next(iter(params.get("rotation", [0]))))
+        image = image.rotate(-rotation)
 
-        inky.set_image(resized, saturation=saturation)
+        inky = auto(ask_user=True, verbose=True)
+        image = ImageOps.fit(image, inky.resolution)
+
+        saturation = float(next(iter(params.get("saturation", [0.5]))))
+        inky.set_image(image, saturation=saturation)
         inky.show()
 
         body = f"Saved {basename}"
