@@ -34,6 +34,7 @@ class BadgeServer(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Content-Type", "application/json")
             self.end_headers()
+
             self.wfile.write(body.encode("utf-8"))
         else:
             self.send_response(404)
@@ -42,43 +43,52 @@ class BadgeServer(BaseHTTPRequestHandler):
     def _list_contents(path: str):
         return json.dumps(next(walk(path), (None, None, []))[2])
 
+    # curl -k -X DELETE https://raspberrypi.local/{basename}:8080
     def do_DELETE(self):  # pylint: disable=invalid-name
-        self.send_response(405, "Method Not Allowed")
-        self.end_headers()
+        filename = self._get_filename()
 
-    def do_POST(self):  # pylint: disable=invalid-name
-        self.send_response(405, "Method Not Allowed")
-        self.end_headers()
-
-    # curl -k -X PUT --upload-file {} https://raspberrypi.local:8080
-    def do_PUT(self):  # pylint: disable=invalid-name
-        params = parse.parse_qs(parse.urlparse(self.path).query)
-        image = next(iter(params.get("image", None) or []), None)
-
-        basename = image or os.path.basename(self.path)
-        path = f"{args.uploads}/{basename}"
-
-        content_length = int(self.headers["Content-Length"] or 0)
-        if content_length > 0:
-            if os.path.exists(path):
-                body = f"{basename} already exists"
-                self.send_response(409, "Conflict")
-                self.send_header("Content-Length", str(len(body)))
-                self.send_header("Content-Type", "text/plain")
-                self.end_headers()
-                self.wfile.write(body.encode("utf-8"))
-                return
-
-            with open(path, "wb") as output:
-                output.write(self.rfile.read(content_length))
-
-        elif not os.path.exists(path):
+        if not os.path.exists(filename):
             self.send_response(404, "Not Found")
             self.end_headers()
             return
 
-        image = Image.open(path)
+        os.remove(filename)
 
+        self.send_response(204, "No Content")
+        self.end_headers()
+
+    def _get_filename(self):
+        path = parse.urlparse(self.path).path
+        basename = os.path.basename(path)
+        return f"{args.uploads}/{basename}"
+
+    # curl -k -X POST --upload-file {basename} https://raspberrypi.local:8080
+    def do_POST(self):  # pylint: disable=invalid-name
+        filename = self._get_filename()
+
+        if os.path.exists(filename):
+            self.send_response(409, "Conflict")
+            self.end_headers()
+            return
+
+        with open(filename, "wb") as output:
+            output.write(self.rfile.read(int(self.headers["Content-Length"])))
+
+        self._set_image(filename)
+
+        self.send_response(201, "Created")
+        self.end_headers()
+
+    # curl -k -X PUT https://raspberrypi.local/{basename}:8080
+    def do_PUT(self):  # pylint: disable=invalid-name
+        self._set_image(self._get_filename())
+        self.send_response(202, "OK")
+        self.end_headers()
+
+    def _set_image(self, file):
+        image = Image.open(file)
+
+        params = parse.parse_qs(parse.urlparse(self.path).query)
         rotation = int(next(iter(params.get("rotation", [0]))))
         image = image.rotate(-rotation)
 
@@ -88,13 +98,6 @@ class BadgeServer(BaseHTTPRequestHandler):
         saturation = float(next(iter(params.get("saturation", [0.5]))))
         inky.set_image(image, saturation=saturation)
         inky.show()
-
-        body = f"Saved {basename}"
-        self.send_response(201, "Created")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Content-Type", "text/plain")
-        self.end_headers()
-        self.wfile.write(body.encode("utf-8"))
 
 
 if __name__ == "__main__":
